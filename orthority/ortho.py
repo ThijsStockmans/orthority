@@ -138,7 +138,9 @@ class Ortho:
                 )
             # crs comparison is time-consuming - perform it once here
             crs_equal = self._crs == dem_im.crs
-
+            print("crs_equal", crs_equal)
+            print("self._crs", self._crs)
+            print("dem_im.crs", dem_im.crs)
             # find the scale from meters to ortho crs z units (projects from a valid (x,y) in ortho
             # crs so that we stay inside projection domains (#18))
             zs = []
@@ -150,7 +152,7 @@ class Ortho:
                 zs.append(ref_xyz[2][0])
             z_scale = 1 / (zs[1] - zs[0])
             dem_full_win = Window(0, 0, dem_im.width, dem_im.height)
-
+            print("dem_full_win: ", dem_full_win)
             def get_win_at_zs(zs: Sequence[float]) -> Window:
                 """Return a DEM window that contains the ortho bounds at z values in ``zs``."""
                 world_xyz = []
@@ -158,12 +160,15 @@ class Ortho:
                     world_xyz.append(self._camera.world_boundary(z))
                 world_xyz = np.column_stack(world_xyz)
                 world_bounds = [*np.min(world_xyz[:2], axis=1), *np.max(world_xyz[:2], axis=1)]
+                print("world_bounds: ", world_bounds)	
                 dem_bounds = (
                     transform_bounds(self._crs, dem_im.crs, *world_bounds)
                     if not crs_equal
                     else world_bounds
                 )
+                print("dem_bounds: ", dem_bounds)
                 dem_win = dem_im.window(*dem_bounds)
+                print("dem_win: ", dem_win)
                 try:
                     dem_win = dem_full_win.intersection(dem_win)
                 except rio.errors.WindowError:
@@ -175,6 +180,7 @@ class Ortho:
             dem_win = get_win_at_zs(zs)
             # read the window from the dem
             dem_array = dem_im.read(dem_band, window=dem_win, masked=True)
+            print("dem_array originally", dem_array)	
             dem_array_win = dem_win
 
             # reduce the dem window to contain the ortho bounds at min & max dem altitude,
@@ -195,11 +201,14 @@ class Ortho:
                 dem_win.col_off - dem_array_win.col_off,
             )
             dem_ij_stop = (dem_ij_start[0] + dem_win.height, dem_ij_start[1] + dem_win.width)
+            print("dem_ij_start", dem_ij_start)
+            print("dem_ij_stop", dem_ij_stop)
             dem_array = dem_array[
                 dem_ij_start[0] : dem_ij_stop[0], dem_ij_start[1] : dem_ij_stop[1]
             ]
+            print("dem_array after slicing", dem_array)
             dem_transform = dem_im.window_transform(dem_win)
-
+            print("dem_transform", dem_transform)
             # cast dem_array to float32 and set nodata to nan (to persist masking through cv2.remap)
             dem_array = dem_array.astype('float32', copy=False).filled(np.nan)
             return dem_array, dem_transform, dem_im.crs
@@ -244,16 +253,20 @@ class Ortho:
         dem_res = np.abs((self._dem_transform[0], self._dem_transform[4]))
         if (self._dem_crs == self._crs) and np.all(resolution == dem_res):
             return self._dem_array.copy(), self._dem_transform
-
+        print("dem_res", dem_res)
+        print("dem_array before res check", self._dem_array)
         # error check resolution
         init_bounds = array_bounds(*self._dem_array.shape, self._dem_transform)
+        print("init_bounds", init_bounds)
         ortho_bounds = np.array(transform_bounds(self._dem_crs, self._crs, *init_bounds))
         ortho_size = ortho_bounds[2:] - ortho_bounds[:2]
         if np.any(resolution > ortho_size):
+            print("resolution: ", resolution)
+            print("ortho_size: ", ortho_size)
             raise OrthorityError(
                 f"Ortho resolution for '{self._src_name}' is larger than the ortho bounds."
             )
-
+        print("Here everything is still going well")
         # find z scaling from dem to world / ortho crs to set MULT_FACTOR_VERTICAL_SHIFT
         # (rasterio does not set it automatically, as GDAL does)
         dem_ji = (np.array(self._dem_array.shape[::-1]) - 1) / 2
@@ -272,6 +285,7 @@ class Ortho:
         #  is written.  or read the dem and src image in parallel, avoiding masked reads
 
         # reproject dem_array to world / ortho crs and ortho resolution
+        print("dem_array before reproject", self._dem_array)
         dem_array, dem_transform = reproject(
             self._dem_array,
             None,
@@ -287,6 +301,7 @@ class Ortho:
             mult_factor_vertical_shift=z_scale,
             num_threads=os.cpu_count(),
         )
+        print("dem_array after reproject", dem_array)
         return dem_array.squeeze(), dem_transform
 
     def _mask_dem(
@@ -308,13 +323,16 @@ class Ortho:
             interp=dem_interp,
             num_pts=num_pts,
         )[:2, :]
-
+        print("poly_xy size", poly_xy.size)
         # find intersection of poly_xy and dem mask, and check dem coverage
         inv_transform = ~(dem_transform * rio.Affine.translation(0.5, 0.5))
         poly_ji = np.round(inv_transform * poly_xy).astype('int')
         poly_mask = np.zeros(dem_array.shape, dtype='uint8')
         poly_mask = cv2.fillPoly(poly_mask, [poly_ji.T], color=(255,)).view(bool)
+        print("poly_mask", poly_mask)   
+        print("dem_array", dem_array)
         dem_mask = poly_mask & ~np.isnan(dem_array)
+        print("dem_mask", dem_mask)
         dem_mask_sum = dem_mask.sum()
 
         if dem_mask_sum == 0:
@@ -567,7 +585,7 @@ class Ortho:
                 resolution = (self._gsd, self._gsd)
                 res_str = ('{:.4e}' if resolution[0] < 1e-3 else '{:.4f}').format(resolution[0])
                 logger.debug('Using auto resolution: ' + res_str)
-
+            print("resolution", resolution)
             # open source image
             env = rio.Env(
                 GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True
