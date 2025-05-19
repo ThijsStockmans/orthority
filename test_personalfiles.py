@@ -18,10 +18,10 @@ def _get_point(data):
         except:
             row += 1
 
-        if row == 200:
-            plt.imshow(data)
-            plt.show()
-            break
+        # if row == 200:
+        #     plt.imshow(data)
+        #     plt.show()
+        #     break
     # print(point, row)
 
     # print(data)
@@ -83,24 +83,33 @@ def make_fake_data():
     imwrite(src_file_source, im)
     return src_file_source
 
+def _orthorectify(src_file, dem_file, int_param_file, ext_param_file, io_kwargs=dict(crs='EPSG:4087')):
+    print(src_file, ext_param_file)
+    cameras = oty.FrameCameras(int_param_file, ext_param_file, io_kwargs=io_kwargs)
+    camera = cameras.get(src_file)
+    print(dir(camera))
+    print(camera.pos)
+# create Ortho object and orthorectify
+    ortho = oty.Ortho(src_file, dem_file, camera=camera, crs=cameras.crs)
+    return ortho
 
-def orthorectify(time="20-33-30", instrument="Telops"):
+def orthorectify(root_dir, time="20-33-30", instrument="Telops"):
     suffix = ".tiff"
-    # root_dir = "C:/Users/thijs/OneDrive/Documents/PostDoc_UPC/Data_local/Mountain_Fire_processing/day_09_04_2022/"
-    # root = root_dir+'Metashape/Workswell/Metashape_data_references/Qinertia/' #Qinertia/ Interpolated/
-    root_dir = "/media/Data/2022_calfide/Cedar_Creek_Fire_processing/day_09_10_2022/"
+    
     # root = root_dir + "Metashape/Workswell/Metashape_data_references/Qinertia/"
     root = root_dir + f"Orthority/{instrument}/"
     # src_file_source = root_dir+'Workswell_images/22-45-29/'  # aerial image
     # time = "20-33-30"
-    src_file_source = root_dir+f'{instrument}_images/20.33.30/'  # aerial image
+    # src_file_source = root_dir+f'{instrument}_images/{time}/'  # aerial image
+    src_file_source = root_dir+f'{instrument.split("_")[0]}_images/{instrument}/{time.replace("-", ".")}_rot180/'  # aerial image
     # ext_dir = root + "single_entries210339pitch6.7/"
-    ext_dir = root + f"single_entries_{time}/"
+    ext_dir = root + f"single_entriesreversed_{time}/"
     # src_files = [src_file_source + f for f in os.listdir(src_file_source) if f.endswith('.jpg')]
     # dem_file = root_dir+'USGS_mountain_fire_dem.tif'  # DEM covering imaged area
     # dem_file = root_dir+'USGS_Kaibab_Fire_dem.tif'  # DEM covering imaged area
-    dem_file = root_dir+'USGS_Cedar_Creek_Fire_dem.tif'  # DEM covering imaged area
-    int_param_file = root_dir + "Orthority/int_camera_calfide.yaml"  # interior parameters
+    # dem_file = root_dir+'USGS_Cedar_Creek_Fire_dem.tif'  # DEM covering imaged area
+    dem_file = root_dir+'Merged_DSM.tif'  # DEM covering imaged area
+    int_param_file = root_dir + "Orthority/int_camera_firesense.yaml"  # interior parameters
     # ext_param_file = root + '22-58-55_opk2.geojson'  # exterior parameters
     # ext_param_file = root + '22-45-41_opk3.csv'  # exterior parameters
     ext_param_files = [ext_dir + f for f in os.listdir(ext_dir) if f.endswith('.csv')]  # exterior parameters
@@ -115,17 +124,37 @@ def orthorectify(time="20-33-30", instrument="Telops"):
     for ii in nums[:]:
         src_file = src_file_source + f"frame_{ii}"+suffix
         ext_param_file = ext_dir + f"frame_{ii}.csv"
-        print(src_file, ext_param_file)
-        cameras = oty.FrameCameras(int_param_file, ext_param_file, io_kwargs=io_kwargs)
-        camera = cameras.get(src_file)
-        print(dir(camera))
-        print(camera.pos)
-    # create Ortho object and orthorectify
-        ortho = oty.Ortho(src_file, dem_file, camera=camera, crs=cameras.crs)
-        os.makedirs(root+f"results_{time}/", exist_ok=True)
-        ortho.process(root+f"results_{time}/ortho_{ii}.tif", resolution=estimate_res, interp=oty.enums.Interp.nearest)
+        ortho = _orthorectify(src_file, dem_file, int_param_file, ext_param_file, io_kwargs=io_kwargs)
+        os.makedirs(root+f"results_reverse_{time}/", exist_ok=True)
+        ortho.process(root+f"results_reverse_{time}/ortho_{ii}.tif", resolution=estimate_res, interp=oty.enums.Interp.nearest)
 
     return 0
+
+def try_angles():
+    root_dir = "C:/Users/thijs/OneDrive/Documents/PostDoc_UPC/Data_local/Test_Fire_processing/"
+    instrument = "Flir_wide"
+    root = root_dir # + "Qinertia/"
+    time = "18-22-32"
+    # src_file_source = root_dir+f'{instrument}_images/20.33.30/'  # aerial image
+    src_file = root_dir+f'Flir_images/Flir_wide/18.22.32_rot180/frame_64497.tiff'  # aerial image _rot180
+    # ext_dir = root + "single_entries210339pitch6.7/"
+    ext_dir =  root + f"Orthority/{instrument}/trypitchrollyaw/"
+    dem_file = root_dir+'Merged_DSM.tif'  # DEM covering imaged area
+    int_param_file = root_dir + "int_camera_firesense.yaml"  # interior parameters
+    pitches = [0]
+    rolls = [0]
+    yaws = [0]
+    
+    for p in pitches:
+        for r in rolls:
+            for y in yaws:
+                ext_param_file = ext_dir+f"p{p}r{r}y{y}.csv" # exterior parameters   
+                # print(src_files, ext_param_files)
+                io_kwargs = dict(crs='EPSG:4087')
+                estimate_res = (2.87, 2.87)#(1.6, 1.6)
+                ortho = _orthorectify(src_file, dem_file, int_param_file, ext_param_file, io_kwargs=io_kwargs)
+                os.makedirs(root+f"results_tryangles_{time}/", exist_ok=True)
+                ortho.process(root+f"results_tryangles_{time}/fs_rev_interP_ortho_pitch{p}roll{r}yaw{y}.tif", resolution=estimate_res, interp=oty.enums.Interp.nearest)
 
 def median_raster(merged_data, new_data, merged_mask, new_mask, **kwargs):
     """Calculates the median of the overlapping pixels in the input arrays"""
@@ -179,15 +208,15 @@ def split(a, n):
     k, m = divmod(len(a), n)
     return (a[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
 
-def combine_orthosv2(num = "20", stripwidth = 24, instrument="Telops"):
+def combine_orthosv2(root_dir, num = "20", stripwidth = 24, instrument="Telops"):
     """combines the orthorectified images through the the centerlines of the overlapping pixels"""
     # root_dir = "C:/Users/thijs/OneDrive/Documents/PostDoc_UPC/Data_local/Mountain_Fire_processing/day_09_04_2022/"
     # root = root_dir+'Metashape/Workswell/Metashape_data_references/Qinertia/' #Qinertia/ Interpolated/
-    root_dir = "/media/Data/2022_calfide/Cedar_Creek_Fire_processing/day_09_10_2022/"
+    
     root = root_dir + f"Orthority/{instrument}/"
     time = num#"20-33-30"
-    source = root+f"results_{time}/"
-    orthos_uint8 = [ii for ii in os.listdir(source) if ii.endswith('.tif') and "trimmed" not in ii]
+    source = root+f"results_reverse_{time}/"
+    orthos_uint8 = [ii for ii in os.listdir(source) if ii.endswith('Hmodified.tif') and "trimmed" not in ii]
     orthos_numbers = [ii.split("_")[1].rstrip(".tif") for ii in orthos_uint8]
     if len(orthos_uint8) > 500:
         list_of_lists = split(orthos_uint8, len(orthos_uint8)//300)
@@ -247,13 +276,13 @@ def combine_orthosv2(num = "20", stripwidth = 24, instrument="Telops"):
                 "transform": outputT,
             }
         )
-        with rio.open(root+f"ortho_combined_mean_strip{num}_{number}.tif", 'w', **output_meta) as dst:
+        with rio.open(root+f"ortho_combined_mean_reversedHmod_strip{num}_{number}.tif", 'w', **output_meta) as dst:
             dst.write(mean)
-        with rio.open(root+f"ortho_combined_sum_strip{num}_{number}.tif", 'w', **output_meta) as dst:
+        with rio.open(root+f"ortho_combined_sum_reversedHmod_strip{num}_{number}.tif", 'w', **output_meta) as dst:
             dst.write(sum)
-        with rio.open(root+f"ortho_combined_counts_strip{num}_{number}.tif", 'w', **output_meta) as dst:
+        with rio.open(root+f"ortho_combined_counts_reversedHmod_strip{num}_{number}.tif", 'w', **output_meta) as dst:
             dst.write(counts)
-        with rio.open(root+f"ortho_combined_max_strip{num}_{number}.tif", 'w', **output_meta) as dst:
+        with rio.open(root+f"ortho_combined_max_reversedHmod_strip{num}_{number}.tif", 'w', **output_meta) as dst:
             dst.write(max)
     return 0
     
@@ -280,11 +309,17 @@ def main():
 #     print(result.profile)
 #     print(np.sum(result.read(1)>0))
 #     print(640*514)
-    num = "20-33-30"
-    orthorectify(time = num, instrument="Telops")
+
+    # try_angles()
+
+    root_dir = "C:/Users/thijs/OneDrive/Documents/PostDoc_UPC/Data_local/Test_Fire_processing/"
+    # root = root_dir+'Metashape/Workswell/Metashape_data_references/Qinertia/' #Qinertia/ Interpolated/
+    # root_dir = "/media/Data/2022_calfide/Cedar_Creek_Fire_processing/day_09_10_2022/"
+    num = "18-22-32"
+    # orthorectify(root_dir, time = num, instrument="Flir_wide")
     
-    # combine_orthos()
-    combine_orthosv2(num=num, stripwidth=90, instrument="Telops")
+    # # combine_orthos()
+    combine_orthosv2(root_dir, num=num, stripwidth=36, instrument="Flir_wide")
     return 0
 
 if __name__ == "__main__":
