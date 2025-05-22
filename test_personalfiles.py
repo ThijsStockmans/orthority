@@ -83,7 +83,7 @@ def make_fake_data():
     imwrite(src_file_source, im)
     return src_file_source
 
-def _orthorectify(src_file, dem_file, int_param_file, ext_param_file, io_kwargs=dict(crs='EPSG:4087')):
+def _orthorectify(src_file, dem_file, int_param_file, ext_param_file, io_kwargs=dict(crs='EPSG:3857')): #crs='EPSG:4087'
     print(src_file, ext_param_file)
     cameras = oty.FrameCameras(int_param_file, ext_param_file, io_kwargs=io_kwargs)
     camera = cameras.get(src_file)
@@ -103,7 +103,7 @@ def orthorectify(root_dir, time="20-33-30", instrument="Telops"):
     # src_file_source = root_dir+f'{instrument}_images/{time}/'  # aerial image
     src_file_source = root_dir+f'{instrument.split("_")[0]}_images/{instrument}/{time.replace("-", ".")}_rot180/'  # aerial image
     # ext_dir = root + "single_entries210339pitch6.7/"
-    ext_dir = root + f"single_entriesreversed_{time}/"
+    ext_dir = root + f"single_entriesOffset_{time}/"
     # src_files = [src_file_source + f for f in os.listdir(src_file_source) if f.endswith('.jpg')]
     # dem_file = root_dir+'USGS_mountain_fire_dem.tif'  # DEM covering imaged area
     # dem_file = root_dir+'USGS_Kaibab_Fire_dem.tif'  # DEM covering imaged area
@@ -118,15 +118,15 @@ def orthorectify(root_dir, time="20-33-30", instrument="Telops"):
     # create a camera model for src_file from interior & exterior parameters
     nums = [f.split('_')[-1].removesuffix(suffix) for f in os.listdir(src_file_source) if f.endswith(suffix)]
     # print(src_files, ext_param_files)
-    io_kwargs = dict(crs='EPSG:4087')
+    io_kwargs = dict(crs='EPSG:3857') #crs='EPSG:4087'
     estimate_res = (2.87, 2.87)#(1.6, 1.6)
 
     for ii in nums[:]:
         src_file = src_file_source + f"frame_{ii}"+suffix
         ext_param_file = ext_dir + f"frame_{ii}.csv"
         ortho = _orthorectify(src_file, dem_file, int_param_file, ext_param_file, io_kwargs=io_kwargs)
-        os.makedirs(root+f"results_reverse_{time}/", exist_ok=True)
-        ortho.process(root+f"results_reverse_{time}/ortho_{ii}.tif", resolution=estimate_res, interp=oty.enums.Interp.nearest)
+        os.makedirs(root+f"results_offset_{time}/", exist_ok=True)
+        ortho.process(root+f"results_offset_{time}/ortho_{ii}.tif", resolution=estimate_res, interp=oty.enums.Interp.nearest)
 
     return 0
 
@@ -138,7 +138,7 @@ def try_angles():
     # src_file_source = root_dir+f'{instrument}_images/20.33.30/'  # aerial image
     src_file = root_dir+f'Flir_images/Flir_wide/18.22.32_rot180/frame_64497.tiff'  # aerial image _rot180
     # ext_dir = root + "single_entries210339pitch6.7/"
-    ext_dir =  root + f"Orthority/{instrument}/trypitchrollyaw/"
+    ext_dir =  root + f"Orthority/{instrument}/"#trypitchrollyaw/"
     dem_file = root_dir+'Merged_DSM.tif'  # DEM covering imaged area
     int_param_file = root_dir + "int_camera_firesense.yaml"  # interior parameters
     pitches = [0]
@@ -148,13 +148,15 @@ def try_angles():
     for p in pitches:
         for r in rolls:
             for y in yaws:
-                ext_param_file = ext_dir+f"p{p}r{r}y{y}.csv" # exterior parameters   
+                ext_param_file = ext_dir+"frame_solvePnP.csv"#f"p{p}r{r}y{y}.csv" # exterior parameters   
                 # print(src_files, ext_param_files)
-                io_kwargs = dict(crs='EPSG:4087')
+                io_kwargs = dict(crs='EPSG:3857') #crs='EPSG:4087'
                 estimate_res = (2.87, 2.87)#(1.6, 1.6)
                 ortho = _orthorectify(src_file, dem_file, int_param_file, ext_param_file, io_kwargs=io_kwargs)
                 os.makedirs(root+f"results_tryangles_{time}/", exist_ok=True)
-                ortho.process(root+f"results_tryangles_{time}/fs_rev_interP_ortho_pitch{p}roll{r}yaw{y}.tif", resolution=estimate_res, interp=oty.enums.Interp.nearest)
+                ortho.process(root+f"results_tryangles_{time}/solvePnP5.tif", resolution=estimate_res, interp=oty.enums.Interp.nearest)
+
+    # interP_ortho_pitch{p}roll{r}yaw{y}.tif
 
 def median_raster(merged_data, new_data, merged_mask, new_mask, **kwargs):
     """Calculates the median of the overlapping pixels in the input arrays"""
@@ -215,8 +217,8 @@ def combine_orthosv2(root_dir, num = "20", stripwidth = 24, instrument="Telops")
     
     root = root_dir + f"Orthority/{instrument}/"
     time = num#"20-33-30"
-    source = root+f"results_reverse_{time}/"
-    orthos_uint8 = [ii for ii in os.listdir(source) if ii.endswith('Hmodified.tif') and "trimmed" not in ii]
+    source = root+f"results_offset_{time}/"
+    orthos_uint8 = [ii for ii in os.listdir(source) if ii.endswith('.tif') and "trimmed" not in ii]
     orthos_numbers = [ii.split("_")[1].rstrip(".tif") for ii in orthos_uint8]
     if len(orthos_uint8) > 500:
         list_of_lists = split(orthos_uint8, len(orthos_uint8)//300)
@@ -276,13 +278,13 @@ def combine_orthosv2(root_dir, num = "20", stripwidth = 24, instrument="Telops")
                 "transform": outputT,
             }
         )
-        with rio.open(root+f"ortho_combined_mean_reversedHmod_strip{num}_{number}.tif", 'w', **output_meta) as dst:
+        with rio.open(root+f"ortho_combined_mean_offset_strip{num}_{number}.tif", 'w', **output_meta) as dst:
             dst.write(mean)
-        with rio.open(root+f"ortho_combined_sum_reversedHmod_strip{num}_{number}.tif", 'w', **output_meta) as dst:
+        with rio.open(root+f"ortho_combined_sum_offset_strip{num}_{number}.tif", 'w', **output_meta) as dst:
             dst.write(sum)
-        with rio.open(root+f"ortho_combined_counts_reversedHmod_strip{num}_{number}.tif", 'w', **output_meta) as dst:
+        with rio.open(root+f"ortho_combined_counts_offset_strip{num}_{number}.tif", 'w', **output_meta) as dst:
             dst.write(counts)
-        with rio.open(root+f"ortho_combined_max_reversedHmod_strip{num}_{number}.tif", 'w', **output_meta) as dst:
+        with rio.open(root+f"ortho_combined_max_offset_strip{num}_{number}.tif", 'w', **output_meta) as dst:
             dst.write(max)
     return 0
     

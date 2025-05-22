@@ -684,11 +684,10 @@ class FrameCamera(Camera):
         # find principal point in pixels
         c_xy = (im_size - 1) / 2
         c_xy += im_size.max() * np.array((cx, cy))
-        shear = 0*sigma_xy[0]  # TODO: check this is correct
         # intrinsic matrix to convert from camera co-ords in OpenSfM / OpenCV convention
         # (x->right, y->down, z->forwards, looking through the camera at the scene) to pixel
         # co-ords in standard convention (x->right, y->down).
-        K = np.array([[sigma_xy[0], 0, c_xy[0]], [shear, sigma_xy[1], c_xy[1]], [0, 0, 1]])
+        K = np.array([[sigma_xy[0], 0, c_xy[0]], [0, sigma_xy[1], c_xy[1]], [0, 0, 1]])
         return K
 
     @staticmethod
