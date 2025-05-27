@@ -7,6 +7,7 @@ import rasterio as rio
 from rasterio.merge import merge
 from rasterio.vrt import WarpedVRT
 import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
 
 def _get_point(data):
     point = -1
@@ -54,6 +55,18 @@ def guess_flight_angle(data):
     right_angle = along_flight_angle + np.pi / 2
     along_swath_diff = along_swath_angle - right_angle
 
+    side1_length = np.sqrt(
+        (c1_row - d1) ** 2 + (c1 - d1_row) ** 2
+    )
+    print("side1_length: ", side1_length)
+    side2_length = np.sqrt(
+        (c1_row - d2) ** 2 + (c1-(d - d2_row)) ** 2
+    )
+    print("side2_length: ", side2_length)
+    if side1_length < side2_length:
+        along_flight_angle = along_swath_angle
+        along_swath_angle = along_flight_angle
+
     print(
         "flight angles: ", np.rad2deg(along_flight_angle), np.rad2deg(along_swath_angle)
     )
@@ -83,6 +96,19 @@ def make_fake_data():
     imwrite(src_file_source, im)
     return src_file_source
 
+def match_folder(folders, ref_files, delim="-"):
+    folder_times = np.array(
+        [datetime.strptime(f, f"%H{delim}%M{delim}%S") for f in folders]
+    )
+    ref_times = np.array(
+        [datetime.strptime(f.removesuffix(".txt"), "%H-%M-%S") for f in ref_files]
+    )
+    matches = []
+    for ii, t in enumerate(folder_times):
+        match_time = np.where(np.abs(ref_times - t) < timedelta(seconds=15))
+        if match_time[0].size > 0:
+            matches.append((folders[ii], ref_files[match_time[0][0]]))
+    return matches
 
 def orthorectify(time="20-33-30", instrument="Telops"):
     suffix = ".tiff"
@@ -93,13 +119,14 @@ def orthorectify(time="20-33-30", instrument="Telops"):
     root = root_dir + f"Orthority/{instrument}/"
     # src_file_source = root_dir+'Workswell_images/22-45-29/'  # aerial image
     # time = "20-33-30"
-    src_file_source = root_dir+f'{instrument}_images/20.33.30/'  # aerial image
+    src_file_source = match_folder(os.listdir(root_dir+f'{instrument}_images/'), [f"{time}.txt"])[0][0]
+    src_file_source = root_dir+f'{instrument}_images/' + src_file_source + "/" # aerial image
     # ext_dir = root + "single_entries210339pitch6.7/"
     ext_dir = root + f"single_entries_{time}/"
     # src_files = [src_file_source + f for f in os.listdir(src_file_source) if f.endswith('.jpg')]
     # dem_file = root_dir+'USGS_mountain_fire_dem.tif'  # DEM covering imaged area
     # dem_file = root_dir+'USGS_Kaibab_Fire_dem.tif'  # DEM covering imaged area
-    dem_file = root_dir+'USGS_Cedar_Creek_Fire_dem.tif'  # DEM covering imaged area
+    dem_file = root_dir+'USGS_Cedar_Creek_Fire_bigdem.tif'  # DEM covering imaged area
     int_param_file = root_dir + "Orthority/int_camera_calfide.yaml"  # interior parameters
     # ext_param_file = root + '22-58-55_opk2.geojson'  # exterior parameters
     # ext_param_file = root + '22-45-41_opk3.csv'  # exterior parameters
@@ -107,6 +134,7 @@ def orthorectify(time="20-33-30", instrument="Telops"):
 
 
     # create a camera model for src_file from interior & exterior parameters
+    # nums = [f.split('_')[-1].removesuffix(suffix) for f in os.listdir(src_file_source) if f.endswith(suffix)]
     nums = [f.split('_')[-1].removesuffix(suffix) for f in os.listdir(src_file_source) if f.endswith(suffix)]
     # print(src_files, ext_param_files)
     io_kwargs = dict(crs='EPSG:4087')
@@ -178,6 +206,32 @@ def combine_orthos(num = "1"):
 def split(a, n):
     k, m = divmod(len(a), n)
     return (a[i*k+min(i, m):(i+1)*k+min(i+1, m)] for i in range(n))
+
+def single_trim(num = "20", stripwidth = 24, instrument="Telops"):
+    """combines the orthorectified images through the the centerlines of the overlapping pixels"""
+    # root_dir = "C:/Users/thijs/OneDrive/Documents/PostDoc_UPC/Data_local/Mountain_Fire_processing/day_09_04_2022/"
+    # root = root_dir+'Metashape/Workswell/Metashape_data_references/Qinertia/' #Qinertia/ Interpolated/
+    root_dir = "/media/Data/2022_calfide/Cedar_Creek_Fire_processing/day_09_10_2022/"
+    root = root_dir + f"Orthority/{instrument}/"
+    time = num#"20-33-30"
+    source = root+f"results_{time}/"
+    orthos_uint8 = [ii for ii in os.listdir(source) if ii.endswith('.tif') and "trimmed" not in ii]
+    for ortho_name in orthos_uint8[0:1]:
+        ortho = r_open(source+ortho_name, "r")
+        meta = ortho.meta
+        # warp = WarpedVRT(ortho, dtype="float32")
+        data = ortho.read(1).copy()
+        
+        # print("og_data: ", data[517, len(data[0])//2-12:len(data[0])//2+12])
+        along_flight_angle = guess_flight_angle(data)
+        # print(np.rad2deg(along_flight_angle))
+        mask = make_mask(data, along_flight_angle, stripwidth=stripwidth)
+        fig, axes = plt.subplots( 1, 3)
+        axes[0].imshow(data)
+        axes[1].imshow(mask)
+        axes[2].imshow(data*mask)
+        plt.show()
+    return 0 
 
 def combine_orthosv2(num = "20", stripwidth = 24, instrument="Telops"):
     """combines the orthorectified images through the the centerlines of the overlapping pixels"""
@@ -280,11 +334,12 @@ def main():
 #     print(result.profile)
 #     print(np.sum(result.read(1)>0))
 #     print(640*514)
-    num = "20-33-30"
-    orthorectify(time = num, instrument="Telops")
+    num = "20-22-58"
+    # orthorectify(time = num, instrument="Workswell")
     
     # combine_orthos()
-    combine_orthosv2(num=num, stripwidth=90, instrument="Telops")
+    combine_orthosv2(num=num, stripwidth=90, instrument="Workswell")
+    # single_trim(num=num, stripwidth=90, instrument="Workswell")
     return 0
 
 if __name__ == "__main__":
