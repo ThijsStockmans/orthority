@@ -57,6 +57,7 @@ class RstCommand(click.Command):
 
         Doesn't work with grid tables.
         """
+        # TODO: simplify as in geedim
 
         # Note that this can't easily be done in __init__, as each sub-command's __init__ gets
         # called, which ends up re-assigning self.wrap_text to reformat_text
@@ -395,7 +396,6 @@ int_param_file_option = click.option(
     'int_param_file',
     type=click.Path(dir_okay=False),
     required=True,
-    default=None,
     callback=partial(_file_cb, mode='rt'),
     help='Path / URI of an interior parameter file.',
 )
@@ -405,7 +405,6 @@ ext_param_file_option = click.option(
     'ext_param_file',
     type=click.Path(dir_okay=False),
     required=True,
-    default=None,
     callback=partial(_file_cb, mode='rt'),
     help='Path / URI of an exterior parameter file.',
 )
@@ -429,6 +428,7 @@ lla_crs_option = click.option(
     help='CRS of any geographic coordinate exterior parameters as an EPSG, proj4, or WKT string; '
     'path / URI of a text file containing string; or path / URI of an image with metadata CRS.',
 )
+# TODO: link :option: in options too - see geedim for e.g.
 radians_option = click.option(
     '-rd/-dg',
     '--radians/--degrees',
@@ -783,7 +783,6 @@ def exif(
     '--dataset-dir',
     type=click.Path(file_okay=False),
     required=True,
-    default=None,
     callback=_dir_cb,
     help='Path / URI of the ODM dataset to process.',
 )
@@ -1032,7 +1031,6 @@ def rpc(
     'pan_file',
     type=click.Path(dir_okay=False),
     required=True,
-    default=None,
     callback=partial(_file_cb, mode='rb'),
     help='Path / URI of the panchromatic image.',
 )
@@ -1042,7 +1040,6 @@ def rpc(
     'ms_file',
     type=click.Path(dir_okay=False),
     required=True,
-    default=None,
     callback=partial(_file_cb, mode='rb'),
     help='Path / URI of the multispectral image.',
 )
@@ -1051,7 +1048,6 @@ def rpc(
     '--out-file',
     type=click.Path(dir_okay=False),
     required=True,
-    default=None,
     callback=partial(_file_cb, mode='wb'),
     help='Path / URI of the pan-sharpened image.',
 )
