@@ -15,8 +15,7 @@ from rasterio.vrt import WarpedVRT
 from rasterio.warp import transform_bounds
 from rasterio.windows import Window
 
-from orthority import common
-from orthority import param_io
+from orthority import common, param_io
 from orthority.enums import Compress
 from orthority.exif import Exif
 from orthority.factory import RpcCameras
@@ -38,21 +37,22 @@ io_root = Path('C:/Data/Development/Projects/orthority/tests/data/io')
 def downsample_image(
     src_file: Path,
     dst_file: Path,
-    src_indexes: int | list[int] = None,
+    src_indexes: int | list[int] | None = None,
     src_win: Window = None,
     ds_fact: float = 4.0,
     crs: str | rio.CRS = None,
     dtype: str | np.dtype = None,
     compress: str | Compress = None,
-    scale: float = None,
+    scale: float | None = None,
     copy_tags: bool = False,
     **kwargs,  # destination creation options
 ):
     """Read and reproject / downsample ``src_file``, and write to ``dst_file``."""
     dst_file = Path(dst_file)
-    with rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False), rio.open(
-        src_file, 'r'
-    ) as src_im:
+    with (
+        rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False),
+        rio.open(src_file, 'r') as src_im,
+    ):
         # set up WarpedVRT params
         src_indexes = src_indexes or src_im.indexes
         src_win = src_win or Window(0, 0, src_im.width, src_im.height)
@@ -63,16 +63,7 @@ def downsample_image(
             * rio.Affine.translation(src_win.col_off, src_win.row_off)
             * rio.Affine.scale(ds_fact)
         )
-
-        # create initial destination profile (to get nodata value)
-        colorinterp = [src_im.colorinterp[ci - 1] for ci in src_indexes]
-        profile, _ = common.create_profile(
-            dtype, compress=compress, write_mask=False, colorinterp=colorinterp
-        )
-        if src_im.nodata is None:
-            profile.update(nodata=None)
-        if profile['compress'] == 'deflate':
-            profile.update(predictor=2, zlevel=9)
+        nodata = None if src_im.nodata is None else common._nodata_vals[dtype]
 
         # read, crop and reproject source (use WarpedVRT, rather than
         # DatasetReader.read(out_shape=) which uses overviews possibly resampled with a different
@@ -83,22 +74,27 @@ def downsample_image(
             transform=transform,
             width=int(np.ceil(src_win.width / ds_fact)),
             height=int(np.ceil(src_win.height / ds_fact)),
-            nodata=profile['nodata'],
+            nodata=nodata,
             dtype='float64',
             resampling=Resampling.average,
             num_threads=os.cpu_count(),
         ) as src_im_:
             array = src_im_.read(indexes=src_indexes)
 
-        # update profile with spatial / dimensional items
+        # create destination profile
+        profile, _ = common.create_profile(
+            'gtiff', array.shape, dtype, compress=compress, write_mask=False
+        )
+        if profile['compress'] == 'deflate':
+            profile.update(predictor=2, zlevel=9)
+
         profile.update(
             crs=crs,
             transform=transform if not src_im.transform.is_identity else None,
-            count=array.shape[0],
-            width=array.shape[2],
-            height=array.shape[1],
-            blockxsize=256,  # use original tile config
+            blockxsize=256,
             blockysize=256,
+            colorinterp=[src_im.colorinterp[ci - 1] for ci in src_indexes],
+            nodata=nodata,
         )
 
         # scale and clip the image array
@@ -118,8 +114,8 @@ def downsample_image(
                 # copy metadata
                 dst_im.update_tags(**src_im.tags())
                 for namespace in src_im.tag_namespaces():
-                    # note there is an apparent rio/gdal bug with ':' in the 'xml:XMP' namespace/ tag
-                    # name, where 'xml:XMP=' gets prefixed to the value
+                    # note there is an apparent rio/gdal bug with ':' in the 'xml:XMP' namespace/
+                    # tag name, where 'xml:XMP=' gets prefixed to the value
                     ns_dict = src_im.tags(ns=namespace)
                     dst_im.update_tags(ns=namespace, **ns_dict)
                 for index in dst_im.indexes:
@@ -172,7 +168,7 @@ def create_ngi_test_data():
     dst_ext_file = ngi_test_root.joinpath('camera_pos_ori.txt')
     if dst_ext_file.exists():
         dst_ext_file.unlink()
-    with open(src_ext_file, 'r', newline=None) as fin, open(dst_ext_file, 'w', newline='') as fout:
+    with open(src_ext_file, newline=None) as fin, open(dst_ext_file, 'w', newline='') as fout:
         reader = csv.DictReader(
             fin,
             fieldnames=['filename', 'x', 'y', 'z', 'omega', 'phi', 'kappa'],
@@ -238,7 +234,7 @@ def create_odm_test_data():
         im_size = (dst_im.width, dst_im.height)
     if dst_rec_file.exists():
         dst_rec_file.unlink()
-    with open(src_rec_file, 'r') as f:
+    with open(src_rec_file) as f:
         json_obj = json.load(f)
     json_obj = [
         {k: v for k, v in json_obj[0].items() if k in ['cameras', 'shots', 'reference_lla']}
@@ -296,8 +292,8 @@ def create_rpc_test_data():
 
     # adjust GCPs for crop and downsample
     for gcp in gcps:
-        # +0.5 converts center to UL pixel coords so that they can be scaled.  then -0.5
-        # converts back from UL to center pixel coords as expected by param_io.write_gcps()
+        # +0.5 converts centre to UL pixel coords so that they can be scaled.  then -0.5
+        # converts back from UL to centre pixel coords as expected by param_io.write_gcps()
         gcp['ji'] = (gcp['ji'] - np.array((win.col_off, win.row_off)) + 0.5) / ds_fact - 0.5
 
     # convert GCPs to rasterio format for storing in image metadata (leave in center pixel
