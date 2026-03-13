@@ -721,6 +721,7 @@ class FrameCamera(Camera):
 
     def _horizon_fov(self) -> bool:
         """Whether this camera's field of view includes, or is above, the horizon."""
+        # TODO: actually a world horizontal plane in line with camera, not a horizon
         self._test_init()
         # camera coords for image boundary
         w, h = np.array(self._im_size) - 1
