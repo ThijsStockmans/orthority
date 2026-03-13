@@ -702,7 +702,7 @@ def write_gcps(
 
 def _rpy_to_rotation(rpy: tuple[float, float, float]) -> np.ndarray:
     """Convert the given (roll, pitch, yaw) angles in radians to a rotation matrix."""
-    # see https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
+    # see https://data.pix4d.com/misc/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
     roll, pitch, yaw = rpy
     R_x = np.array([[1, 0, 0], [0, np.cos(roll), -np.sin(roll)], [0, np.sin(roll), np.cos(roll)]])
     R_y = np.array(
@@ -714,7 +714,7 @@ def _rpy_to_rotation(rpy: tuple[float, float, float]) -> np.ndarray:
 
 def _opk_to_rotation(opk: tuple[float, float, float]) -> np.ndarray:
     """Convert the given (omega, phi, kappa) angles in radians to a rotation matrix."""
-    # see https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
+    # see https://data.pix4d.com/misc/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
     omega, phi, kappa = opk
     R_x = np.array(
         [[1, 0, 0], [0, np.cos(omega), -np.sin(omega)], [0, np.sin(omega), np.cos(omega)]]
@@ -728,7 +728,7 @@ def _opk_to_rotation(opk: tuple[float, float, float]) -> np.ndarray:
 
 def _rotation_to_opk(R: np.ndarray) -> tuple[float, float, float]:
     """Convert the given rotation matrix to the (omega, phi, kappa) angles in radians."""
-    # see https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
+    # see https://data.pix4d.com/misc/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
     omega = float(np.arctan2(-R[1, 2], R[2, 2]))
     phi = float(np.arcsin(R[0, 2]))
     kappa = float(np.arctan2(-R[0, 1], R[0, 0]))
@@ -789,7 +789,7 @@ def _rpy_to_opk(
     """
     # Adapted from the OpenSfM exif module
     # https://github.com/mapillary/OpenSfM/blob/main/opensfm/exif.py and Pix4D doc
-    # https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf.
+    # https://data.pix4d.com/misc/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf.
 
     # Note that what the Pix4D reference calls Object (E), and Image (B) coordinates, orthority
     # calls world and camera coordinates respectively.
