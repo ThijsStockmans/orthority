@@ -14,6 +14,7 @@
 # If not, see <https://www.gnu.org/licenses/>.
 
 """EXIF / XMP image tag decoding and reading."""
+
 from __future__ import annotations
 
 import logging
@@ -110,9 +111,11 @@ class Exif:
 
     def __init__(self, file: str | PathLike | OpenFile | rio.DatasetReader):
         self._filename = common.get_filename(file)
-        with common.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), common.OpenRaster(
-            file, 'r'
-        ) as ds:
+        with (
+            common.suppress_no_georef(),
+            rio.Env(GDAL_NUM_THREADS='ALL_CPUS'),
+            common.OpenRaster(file, 'r') as ds,
+        ):
             # NB: avoid calling ds.tag_namespaces() which reads more (all?) of the dataset
             # compared to ds.tags() with known ns=
             exif_dict = ds.tags()
@@ -153,6 +156,7 @@ class Exif:
             f'\nDewarp: {dewarp_str}'
         )
 
+    # TODO: used cached properties instead of _get_*() methods and @property properties
     @property
     def filename(self) -> str:
         """Image filename."""
@@ -232,7 +236,7 @@ class Exif:
 
     @staticmethod
     def _get_make_model_serial(
-        exif_dict: dict[str, str]
+        exif_dict: dict[str, str],
     ) -> tuple[str | None, str | None, str | None]:
         """Return camera make and model string."""
         make_key = 'EXIF_Make'

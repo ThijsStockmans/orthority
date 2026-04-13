@@ -32,9 +32,9 @@ from fsspec.core import OpenFile
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
-from orthority import root_path, common
-from orthority.camera import create_camera, FrameCamera
-from orthority.enums import CameraType, Compress, Interp, RpcRefine, Driver
+from orthority import common, root_path
+from orthority.camera import FrameCamera, create_camera
+from orthority.enums import CameraType, Compress, Driver, Interp, RpcRefine
 from orthority.errors import CrsError, CrsMissingError, OrthorityError
 from orthority.factory import Cameras, FrameCameras, RpcCameras
 from orthority.fit import _default_rpc_refine_method
@@ -57,6 +57,7 @@ class RstCommand(click.Command):
 
         Doesn't work with grid tables.
         """
+        # TODO: simplify as in geedim
 
         # Note that this can't easily be done in __init__, as each sub-command's __init__ gets
         # called, which ends up re-assigning self.wrap_text to reformat_text
@@ -93,7 +94,7 @@ class RstCommand(click.Command):
                 text = re.sub(sub_key, sub_value, text, flags=re.DOTALL)
             wr_text = self.click_wrap_text(text, width, **kwargs)
             # change double newline to single newline separated list
-            return re.sub('\n\n(\s*?)- ', '\n- ', wr_text, flags=re.DOTALL)
+            return re.sub('\n\n(\\s*?)- ', '\n- ', wr_text, flags=re.DOTALL)
 
         click.formatting.wrap_text = reformat_text
         return click.Command.get_help(self, ctx)
@@ -101,6 +102,7 @@ class RstCommand(click.Command):
 
 def _configure_logging(verbosity: int):
     """Configure python logging level."""
+    # TODO: simplify as in geedim
 
     def showwarning(message, category, filename, lineno, file=None, line=None):
         """Redirect orthority warnings to the source module's logger, otherwise show warning as
@@ -160,7 +162,7 @@ def _crs_cb(ctx: click.Context, param: click.Parameter, crs: str):
         try:
             crs = _read_crs(crs)
         except Exception as ex:
-            raise click.BadParameter(f'{str(ex)}', param=param)
+            raise click.BadParameter(f'{ex!s}', param=param)
     return crs
 
 
@@ -200,9 +202,9 @@ def _lla_crs_cb(ctx: click.Context, param: click.Parameter, lla_crs: str) -> str
         try:
             lla_crs = _read_crs(lla_crs)
         except Exception as ex:
-            raise click.BadParameter(f'{str(ex)}', param=param)
+            raise click.BadParameter(f'{ex!s}', param=param)
         if not lla_crs.is_geographic:
-            raise click.BadParameter(f"CRS should be a geographic system.", param=param)
+            raise click.BadParameter("CRS should be a geographic system.", param=param)
     return lla_crs
 
 
@@ -213,18 +215,21 @@ def _resolution_cb(
     if len(resolution) == 1:
         resolution *= 2
     elif len(resolution) > 2:
-        raise click.BadParameter(f'At most two resolution values should be specified.', param=param)
+        raise click.BadParameter('At most two resolution values should be specified.', param=param)
     return resolution
 
 
 def _dir_cb(ctx: click.Context, param: click.Parameter, uri_path: str) -> OpenFile:
     """Click callback to convert a directory to an fsspec OpenFile, and validate."""
     try:
+        # TODO: I'm not sure the slash behaviour still applies like this.  See geedim...
         # some dirs (e.g. gcs buckets) don't work with a trailing slash on the path, so strip it
         ofile = fsspec.open(uri_path.rstrip('/'))
     except Exception as ex:
         raise click.BadParameter(str(ex), param=param)
 
+    # TODO: still necessary?  it seems fsspec / rasterio creates directories automatically.  See
+    #  geedim...
     if not ofile.fs.isdir(ofile.path):
         raise click.BadParameter(
             f"'{uri_path}' is not a directory or cannot be accessed.", param=param
@@ -262,7 +267,7 @@ def _odm_out_dir_cb(ctx: click.Context, param: click.Parameter, out_dir: str) ->
             # --dataset-dir.
             ofile.fs.mkdirs(ofile.path, exist_ok=True)
         except Exception as ex:
-            raise click.BadParameter(f"Cannot create / access '{out_dir}'. {str(ex)}", param=param)
+            raise click.BadParameter(f"Cannot create / access '{out_dir}'. {ex!s}", param=param)
     else:
         ofile = _dir_cb(ctx, param, out_dir)
     return ofile
@@ -391,7 +396,6 @@ int_param_file_option = click.option(
     'int_param_file',
     type=click.Path(dir_okay=False),
     required=True,
-    default=None,
     callback=partial(_file_cb, mode='rt'),
     help='Path / URI of an interior parameter file.',
 )
@@ -401,7 +405,6 @@ ext_param_file_option = click.option(
     'ext_param_file',
     type=click.Path(dir_okay=False),
     required=True,
-    default=None,
     callback=partial(_file_cb, mode='rt'),
     help='Path / URI of an exterior parameter file.',
 )
@@ -425,6 +428,7 @@ lla_crs_option = click.option(
     help='CRS of any geographic coordinate exterior parameters as an EPSG, proj4, or WKT string; '
     'path / URI of a text file containing string; or path / URI of an image with metadata CRS.',
 )
+# TODO: link :option: in options too - see geedim for e.g.
 radians_option = click.option(
     '-rd/-dg',
     '--radians/--degrees',
@@ -443,7 +447,7 @@ resolution_option = click.option(
     multiple=True,
     callback=_resolution_cb,
     help='Ortho image resolution in units of the ``--crs``.  Can be used twice for non-square '
-    'pixels: ``--res PIXEL_WIDTH --res PIXEL_HEIGHT``.',
+    'pixels: ``--res WIDTH --res HEIGHT``.',
 )
 dem_band_option = click.option(
     '-db',
@@ -460,7 +464,7 @@ interp_option = click.option(
     type=click.Choice(Interp, case_sensitive=True),
     default=Ortho._default_alg_config['interp'],
     show_default=True,
-    help=f'Interpolation method for remapping source to ortho image.',
+    help='Interpolation method for remapping source to ortho image.',
 )
 dem_interp_option = click.option(
     '-di',
@@ -468,7 +472,7 @@ dem_interp_option = click.option(
     type=click.Choice(Interp, case_sensitive=True),
     default=Ortho._default_alg_config['dem_interp'],
     show_default=True,
-    help=f'Interpolation method for DEM reprojection.',
+    help='Interpolation method for DEM reprojection.',
 )
 per_band_option = click.option(
     '-pb/-npb',
@@ -506,7 +510,7 @@ driver_option = click.option(
     type=click.Choice(Driver, case_sensitive=True),
     default=common._default_out_config['driver'],
     show_default=True,
-    help=f'Ortho image driver.',
+    help='Ortho image driver.',
 )
 write_mask_option = click.option(
     '-wm/-nwm',
@@ -524,7 +528,7 @@ dtype_option = click.option(
     type=click.Choice(list(common._nodata_vals.keys()), case_sensitive=True),
     default=common._default_out_config['dtype'],
     show_default='source image data type.',
-    help=f'Ortho image data type.',
+    help='Ortho image data type.',
 )
 compress_option = click.option(
     '-cm',
@@ -532,7 +536,7 @@ compress_option = click.option(
     type=click.Choice(Compress, case_sensitive=True),
     default=common._default_out_config['compress'],
     show_default="jpeg for uint8 --dtype, deflate otherwise",
-    help=f'Ortho image compression.',
+    help='Ortho image compression.',
 )
 build_ovw_option = click.option(
     '-bo/-nbo',
@@ -559,10 +563,9 @@ export_params_option = click.option(
     '-e',
     '--export-params',
     is_flag=True,
-    type=click.BOOL,
     default=False,
     show_default=True,
-    help='Export camera parameters to orthority format file(s), and exit.',
+    help='Export camera parameters to Orthority format file(s), and exit.',
 )
 out_dir_option = click.option(
     '-od',
@@ -577,7 +580,6 @@ overwrite_option = click.option(
     '-o',
     '--overwrite',
     is_flag=True,
-    type=click.BOOL,
     default=False,
     show_default=True,
     help='Overwrite existing output(s).',
@@ -781,7 +783,6 @@ def exif(
     '--dataset-dir',
     type=click.Path(file_okay=False),
     required=True,
-    default=None,
     callback=_dir_cb,
     help='Path / URI of the ODM dataset to process.',
 )
@@ -843,7 +844,7 @@ def odm(
     src_files = [OpenFile(images_ofile.fs, sf, 'rb') for sf in src_files]
     if len(src_files) == 0:
         raise click.BadParameter(
-            f"No images found in '<dataset-dir>/images/'.", param_hint="'-dd' / '--dataset-dir'"
+            "No images found in '<dataset-dir>/images/'.", param_hint="'-dd' / '--dataset-dir'"
         )
 
     # read CRS from DSM
@@ -852,7 +853,7 @@ def odm(
         dem_ctx = common.OpenRaster(dem_ofile, 'r')
     except FileNotFoundError as ex:
         raise click.BadParameter(
-            f"No DSM found in '<dataset-dir>/odm_dem/'. {str(ex)}",
+            f"No DSM found in '<dataset-dir>/odm_dem/'. {ex!s}",
             param_hint="'-dd' / '--dataset-dir'",
         )
     with dem_ctx as dem_im:
@@ -869,7 +870,7 @@ def odm(
         )
     except FileNotFoundError as ex:
         raise click.BadParameter(
-            f"No 'reconstruction.json' file found in '<dataset-dir>/opensfm/'. {str(ex)}",
+            f"No 'reconstruction.json' file found in '<dataset-dir>/opensfm/'. {ex!s}",
             param_hint="'-dd' / '--dataset-dir'",
         )
     except OrthorityError as ex:
@@ -1030,7 +1031,6 @@ def rpc(
     'pan_file',
     type=click.Path(dir_okay=False),
     required=True,
-    default=None,
     callback=partial(_file_cb, mode='rb'),
     help='Path / URI of the panchromatic image.',
 )
@@ -1040,7 +1040,6 @@ def rpc(
     'ms_file',
     type=click.Path(dir_okay=False),
     required=True,
-    default=None,
     callback=partial(_file_cb, mode='rb'),
     help='Path / URI of the multispectral image.',
 )
@@ -1049,7 +1048,6 @@ def rpc(
     '--out-file',
     type=click.Path(dir_okay=False),
     required=True,
-    default=None,
     callback=partial(_file_cb, mode='wb'),
     help='Path / URI of the pan-sharpened image.',
 )
@@ -1088,7 +1086,7 @@ def rpc(
     type=click.Choice(Interp, case_sensitive=True),
     default=PanSharpen._default_alg_config['interp'],
     show_default=True,
-    help=f'Interpolation method for upsampling the multispectral image.',
+    help='Interpolation method for upsampling the multispectral image.',
 )
 @write_mask_option
 @click.option(
@@ -1097,7 +1095,7 @@ def rpc(
     type=click.Choice(list(common._nodata_vals.keys()), case_sensitive=True),
     default=common._default_out_config['dtype'],
     show_default='source image data type.',
-    help=f'Pan-sharpened image data type.',
+    help='Pan-sharpened image data type.',
 )
 @click.option(
     '-cm',
@@ -1105,7 +1103,7 @@ def rpc(
     type=click.Choice(Compress, case_sensitive=True),
     default=common._default_out_config['compress'],
     show_default="jpeg for uint8 --dtype, deflate otherwise",
-    help=f'Pan-sharpened image compression.',
+    help='Pan-sharpened image compression.',
 )
 @click.option(
     '-bo/-nbo',
@@ -1134,7 +1132,7 @@ def rpc(
     type=click.Choice(Driver, case_sensitive=True),
     default=common._default_out_config['driver'],
     show_default=True,
-    help=f'Pan-sharpened image driver.',
+    help='Pan-sharpened image driver.',
 )
 @overwrite_option
 def sharpen(
@@ -1279,7 +1277,7 @@ def _simple_ortho(
         if not config_filename.exists():
             raise Exception(f'Config file {config_filename} does not exist')
 
-        with open(config_filename, 'r') as f:
+        with open(config_filename) as f:
             config = yaml.safe_load(f)
 
         # write configuration if requested and exit
@@ -1316,7 +1314,7 @@ def _simple_ortho(
         check_args(src_im_file, dem_file, pos_ori_file, ortho_dir=ortho_dir)
 
         # read camera position and rotation
-        with open(pos_ori_file, 'r', newline='') as f:
+        with open(pos_ori_file, newline='') as f:
             reader = csv.DictReader(
                 f,
                 delimiter=' ',

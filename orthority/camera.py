@@ -14,13 +14,14 @@
 # If not, see <https://www.gnu.org/licenses/>.
 
 """Camera models for projecting between 3D world and 2D pixel coordinates."""
+
 from __future__ import annotations
 
 import logging
 import warnings
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from os import PathLike
-from typing import Sequence
 
 import cv2
 import numpy as np
@@ -33,7 +34,7 @@ from rasterio.warp import transform as warp
 
 from orthority import common
 from orthority.enums import CameraType, Interp
-from orthority.errors import CameraInitError, OrthorityWarning, OrthorityError
+from orthority.errors import CameraInitError, OrthorityError, OrthorityWarning
 from orthority.param_io import _opk_to_rotation
 
 logger = logging.getLogger(__name__)
@@ -63,15 +64,15 @@ class Camera(ABC):
     def _validate_world_coords(xyz: np.ndarray) -> None:
         """Utility function to validate world coordinate dimensions."""
         if not (xyz.ndim == 2 and xyz.shape[0] == 3):
-            raise ValueError(f"'xyz' should be a 3xN 2D array.")
+            raise ValueError("'xyz' should be a 3xN 2D array.")
         if xyz.dtype != np.float64:
-            raise ValueError(f"'xyz' should have 'float64' data type.")
+            raise ValueError("'xyz' should have 'float64' data type.")
 
     @staticmethod
     def _validate_pixel_coords(ji: np.ndarray) -> None:
         """Utility function to validate pixel coordinate dimensions."""
         if not (ji.ndim == 2 and ji.shape[0] == 2):
-            raise ValueError(f"'ji' should be a 2xN 2D array.")
+            raise ValueError("'ji' should be a 2xN 2D array.")
 
     @staticmethod
     def _validate_z(z: np.ndarray, ji: np.ndarray) -> None:
@@ -80,7 +81,7 @@ class Camera(ABC):
             z.ndim != 1 or (z.shape[0] != 1 and ji.shape[1] != 1 and z.shape[0] != ji.shape[1])
         ):
             raise ValueError(
-                f"'z' should be a single value or 1-by-N array where 'ji' is 2-by-N or 2-by-1."
+                "'z' should be a single value or 1-by-N array where 'ji' is 2-by-N or 2-by-1."
             )
 
     def _validate_image(self, im_array: np.ndarray) -> None:
@@ -208,6 +209,7 @@ class Camera(ABC):
             Boundary pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the
             first dimension.
         """
+        # TODO: this does not always return the correct number of pts e.g. num_pts=7 / 11
 
         def rect_boundary(im_size: np.ndarray, num_pts: int) -> np.ndarray:
             """Return a rectangular pixel coordinate boundary of ``num_pts`` ~evenly spaced points
@@ -714,10 +716,11 @@ class FrameCamera(Camera):
     def _test_init(self) -> None:
         """Utility function to test if exterior parameters are initialised."""
         if self._R is None or self._T is None:
-            raise CameraInitError(f'Exterior parameters not initialised.')
+            raise CameraInitError('Exterior parameters not initialised.')
 
     def _horizon_fov(self) -> bool:
         """Whether this camera's field of view includes, or is above, the horizon."""
+        # TODO: actually a world horizontal plane in line with camera, not a horizon
         self._test_init()
         # camera coords for image boundary
         w, h = np.array(self._im_size) - 1
@@ -746,7 +749,7 @@ class FrameCamera(Camera):
         # Note that cv2.fisheye.estimateNewCameraMatrixForUndistortRectify() does not include all
         # source pixels for balance=1.  This method works for all subclasses including fisheye.
         def _get_rectangles(
-            im_size: tuple[int, int]
+            im_size: tuple[int, int],
         ) -> tuple[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]]:
             """Return inner and outer rectangles for distorted image grid points."""
             w, h = np.array(im_size) - 1
@@ -856,6 +859,8 @@ class FrameCamera(Camera):
         """
         # TODO: consider only returning (x, y).  the z dimension is redundant, and it is used this
         #  way in most (all?) places.
+        # TODO: i have noticed that the results with e.g. z=0 sometimes have z close to but not
+        #  equal 0.  is there a way of re-organising this so that doesn't happen?
         self._test_init()
         self._validate_pixel_coords(ji)
         self._validate_z(z, ji)

@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ macos-latest, ubuntu-latest, windows-latest ]
-        python-version: ['3.9', '3.10', '3.11', '3.12']
+        python-version: ['3.9', '3.11', '3.13']
 
     steps:
       - name: Check out repository
@@ -30,7 +30,7 @@ jobs:
       - name: Install package
         run: |
           conda info
-          conda install orthority>=0.5.1
+          conda install orthority>=0.6.1
           conda list
 
       - name: Install OpenCV Linux dependencies

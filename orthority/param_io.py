@@ -14,6 +14,7 @@
 # If not, see <https://www.gnu.org/licenses/>.
 
 """Parameter file IO and conversions."""
+
 from __future__ import annotations
 
 import csv
@@ -22,13 +23,13 @@ import logging
 import os
 import warnings
 from abc import ABC, abstractmethod
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from csv import Dialect, DictReader, Sniffer
 from io import StringIO
 from os import PathLike
 from pathlib import Path
-from typing import Any, IO, Sequence
+from typing import IO, Any
 
 import cv2
 import fsspec
@@ -54,15 +55,13 @@ logger = logging.getLogger(__name__)
 
 _opt_frame_schema = {
     CameraType.pinhole: ['sensor_size', 'cx', 'cy'],
-    # fmt: off
     CameraType.opencv: [
         'sensor_size', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6', 's1', 's2',
         's3', 's4', 'tx', 'ty',
     ],
-    # fmt: on
     CameraType.brown: ['sensor_size', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2', 'k3'],
     CameraType.fisheye: ['sensor_size', 'cx', 'cy', 'k1', 'k2', 'k3', 'k4'],
-}
+}  # fmt: skip
 """Schema of valid optional parameters for each frame camera type."""
 
 _default_lla_crs = CRS.from_epsg(4979)
@@ -218,7 +217,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
         try:
             yaml_dict = yaml.safe_load(f)
         except Exception as ex:
-            raise ParamError(f"Could not load '{filename}': {str(ex)}") from ex
+            raise ParamError(f"Could not load '{filename}': {ex!s}") from ex
 
     def parse_yaml_param(yaml_param: dict, cam_id: str = None) -> dict[str, Any]:
         """Validate & convert the given YAML dictionary for a single camera."""
@@ -270,7 +269,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
     try:
         common.validate_collection({str: dict}, yaml_dict)
     except (TypeError, KeyError, ValueError) as ex:
-        raise ParamError(f"Could not parse '{filename}': {str(ex)}") from ex
+        raise ParamError(f"Could not parse '{filename}': {ex!s}") from ex
 
     # parse each set of interior parameters
     int_param_dict = {}
@@ -279,7 +278,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
             int_param_dict[cam_id] = parse_yaml_param(yaml_param, cam_id)
         except ParamError as ex:
             # repackage error with filename
-            raise ParamError(f"Could not parse '{filename}': {str(ex)}") from ex
+            raise ParamError(f"Could not parse '{filename}': {ex!s}") from ex
 
     return int_param_dict
 
@@ -300,7 +299,7 @@ def read_osfm_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, 
         try:
             json_dict = json.load(f)
         except Exception as ex:
-            raise ParamError(f"Could not load '{filename}': {str(ex)}") from ex
+            raise ParamError(f"Could not load '{filename}': {ex!s}") from ex
 
     # extract cameras section if file is an OpenSfM reconstruction.json file
     if isinstance(json_dict, list) and len(json_dict) == 1 and 'cameras' in json_dict[0]:
@@ -310,7 +309,7 @@ def read_osfm_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, 
         int_param_dict = _read_osfm_int_param(json_dict)
     except ParamError as ex:
         # repackage error with filename
-        raise ParamError(f"Could not parse '{filename}': {str(ex)}") from ex
+        raise ParamError(f"Could not parse '{filename}': {ex!s}") from ex
 
     return int_param_dict
 
@@ -351,9 +350,11 @@ def read_im_rpc_param(
     ) -> dict[str, dict[str, Any]]:
         """Read RPC camera parameters from an image file."""
         filename = common.get_filename(file)
-        with common.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), common.OpenRaster(
-            file, 'r'
-        ) as im:
+        with (
+            common.suppress_no_georef(),
+            rio.Env(GDAL_NUM_THREADS='ALL_CPUS'),
+            common.OpenRaster(file, 'r') as im,
+        ):
             # TODO: what is the speed of this for a large remote image?  does it just read the
             #  metadata, or the whole image?
             im_size = (im.width, im.height)
@@ -362,6 +363,9 @@ def read_im_rpc_param(
         if rpc is None:
             raise ParamError(f"No RPC parameters found in '{filename}'.")
         rpc_param = dict(cam_type=CameraType.rpc, im_size=im_size, rpc=rpc.to_dict())
+        # TODO: can filename be made to conform to actual case of the filename on the file
+        #  system? otherwise, in windows the user can pass a different case filename here which
+        #  won't match with GCPs when refining.
         return {filename: rpc_param}
 
     # read RPC params in a thread pool, populating rpc_param_dict in same order as files
@@ -404,7 +408,7 @@ def read_oty_rpc_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
         try:
             yaml_dict = yaml.safe_load(f)
         except Exception as ex:
-            raise ParamError(f"Could not load '{filename}': {str(ex)}") from ex
+            raise ParamError(f"Could not load '{filename}': {ex!s}") from ex
 
     # validate file format
     schema = {
@@ -432,7 +436,7 @@ def read_oty_rpc_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
     try:
         common.validate_collection(schema, yaml_dict)
     except (ValueError, TypeError, KeyError) as ex:
-        raise ParamError(f"Could not parse '{filename}': {str(ex)}") from ex
+        raise ParamError(f"Could not parse '{filename}': {ex!s}") from ex
 
     # convert to standard format dict
     rpc_param_dict = {}
@@ -464,9 +468,11 @@ def read_im_gcps(
     ) -> dict[str, dict[str, Any]]:
         """Read GCPs from an image file."""
         filename = common.get_filename(file)
-        with common.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), common.OpenRaster(
-            file, 'r'
-        ) as im:
+        with (
+            common.suppress_no_georef(),
+            rio.Env(GDAL_NUM_THREADS='ALL_CPUS'),
+            common.OpenRaster(file, 'r') as im,
+        ):
             gcps, crs = im.gcps
 
         if gcps is None or len(gcps) == 0:
@@ -482,8 +488,8 @@ def read_im_gcps(
         # https://gdal.org/user/raster_data_model.html#gcps.  This assumes image GCPs are in
         # center of pixel coordinate convention.
         oty_gcps = []
-        for gcp, xyz in zip(gcps, xyz.T):
-            gcp = dict(ji=(gcp.col, gcp.row), xyz=tuple(xyz.tolist()), id=gcp.id, info=gcp.info)
+        for gcp, xyz_ in zip(gcps, xyz.T):
+            gcp = dict(ji=(gcp.col, gcp.row), xyz=tuple(xyz_.tolist()), id=gcp.id, info=gcp.info)
             oty_gcps.append(gcp)
 
         return {filename: oty_gcps}
@@ -526,7 +532,7 @@ def read_oty_gcps(file: str | PathLike | OpenFile | IO[str]) -> dict[str, list[d
         try:
             json_dict = json.load(f)
         except Exception as ex:
-            raise ParamError(f"Could not load '{filename}': {str(ex)}") from ex
+            raise ParamError(f"Could not load '{filename}': {ex!s}") from ex
 
     # validate file format
     schema = dict(
@@ -543,7 +549,7 @@ def read_oty_gcps(file: str | PathLike | OpenFile | IO[str]) -> dict[str, list[d
     try:
         common.validate_collection(schema, json_dict)
     except (ValueError, TypeError, KeyError) as ex:
-        raise ParamError(f"Could not parse '{filename}': {str(ex)}") from ex
+        raise ParamError(f"Could not parse '{filename}': {ex!s}") from ex
 
     # convert to standard format dict
     gcp_dict = {}
@@ -618,9 +624,9 @@ def write_ext_param(
     try:
         crs = CRS.from_string(crs) if isinstance(crs, str) else crs
     except RioCrsError as ex:
-        raise CrsError(f"Could not interpret 'crs': {str(ex)}")
+        raise CrsError(f"Could not interpret 'crs': {ex!s}")
     if not crs.is_projected:
-        raise CrsError(f"'crs' should be a projected system.")
+        raise CrsError("'crs' should be a projected system.")
 
     for src_file, ext_param in ext_param_dict.items():
         xyz = ext_param['xyz']
@@ -696,7 +702,7 @@ def write_gcps(
 
 def _rpy_to_rotation(rpy: tuple[float, float, float]) -> np.ndarray:
     """Convert the given (roll, pitch, yaw) angles in radians to a rotation matrix."""
-    # see https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
+    # see https://data.pix4d.com/misc/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
     roll, pitch, yaw = rpy
     R_x = np.array([[1, 0, 0], [0, np.cos(roll), -np.sin(roll)], [0, np.sin(roll), np.cos(roll)]])
     R_y = np.array(
@@ -708,7 +714,7 @@ def _rpy_to_rotation(rpy: tuple[float, float, float]) -> np.ndarray:
 
 def _opk_to_rotation(opk: tuple[float, float, float]) -> np.ndarray:
     """Convert the given (omega, phi, kappa) angles in radians to a rotation matrix."""
-    # see https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
+    # see https://data.pix4d.com/misc/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
     omega, phi, kappa = opk
     R_x = np.array(
         [[1, 0, 0], [0, np.cos(omega), -np.sin(omega)], [0, np.sin(omega), np.cos(omega)]]
@@ -722,10 +728,10 @@ def _opk_to_rotation(opk: tuple[float, float, float]) -> np.ndarray:
 
 def _rotation_to_opk(R: np.ndarray) -> tuple[float, float, float]:
     """Convert the given rotation matrix to the (omega, phi, kappa) angles in radians."""
-    # see https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
-    omega = np.arctan2(-R[1, 2], R[2, 2])
-    phi = np.arcsin(R[0, 2])
-    kappa = np.arctan2(-R[0, 1], R[0, 0])
+    # see https://data.pix4d.com/misc/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
+    omega = float(np.arctan2(-R[1, 2], R[2, 2]))
+    phi = float(np.arcsin(R[0, 2]))
+    kappa = float(np.arctan2(-R[0, 1], R[0, 0]))
     return omega, phi, kappa
 
 
@@ -783,7 +789,7 @@ def _rpy_to_opk(
     """
     # Adapted from the OpenSfM exif module
     # https://github.com/mapillary/OpenSfM/blob/main/opensfm/exif.py and Pix4D doc
-    # https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf.
+    # https://data.pix4d.com/misc/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf.
 
     # Note that what the Pix4D reference calls Object (E), and Image (B) coordinates, orthority
     # calls world and camera coordinates respectively.
@@ -829,6 +835,27 @@ def _rpy_to_opk(
     return omega, phi, kappa
 
 
+def _cv_ext_to_oty_ext(
+    t: Sequence[float] | np.ndarray,
+    r: Sequence[float] | np.ndarray,
+    ref_xyz: Sequence[float] | np.ndarray | None = None,
+) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    """Convert OpenCV / OpenSfM rotation and translation vectors to Orthority format and
+    convention camera (x, y, z) position and (omega, phi, kappa) angles.  Camera positions are
+    offset by ``ref_xyz`` if it is supplied.
+    """
+    # adapted from ODM: https://github.com/OpenDroneMap/ODM/blob/master/opendm/shots.py
+    R = cv2.Rodrigues(np.array(r))[0].T
+    xyz = (-R.dot(t)).squeeze()
+    if ref_xyz is not None:
+        xyz += ref_xyz
+    xyz = tuple(xyz.tolist())
+    # rotate camera coords from OpenSfM / OpenCV to PATB convention
+    R_ = R.dot(np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]))
+    opk = _rotation_to_opk(R_)
+    return xyz, opk
+
+
 class FrameReader(ABC):
     """
     Base frame camera parameter reader.
@@ -852,17 +879,17 @@ class FrameReader(ABC):
             try:
                 crs = CRS.from_string(crs) if isinstance(crs, str) else crs
             except RioCrsError as ex:
-                raise CrsError(f"Could not interpret 'crs': {str(ex)}")
+                raise CrsError(f"Could not interpret 'crs': {ex!s}")
             if not crs.is_projected:
-                raise CrsError(f"'crs' should be a projected system.")
+                raise CrsError("'crs' should be a projected system.")
 
         if lla_crs:
             try:
                 lla_crs = CRS.from_string(lla_crs) if isinstance(lla_crs, str) else lla_crs
             except RioCrsError as ex:
-                raise CrsError(f"Could not interpret 'lla_crs': {str(ex)}")
+                raise CrsError(f"Could not interpret 'lla_crs': {ex!s}")
             if not lla_crs.is_geographic:
-                raise CrsError(f"'lla_crs' should be a geographic system.")
+                raise CrsError("'lla_crs' should be a geographic system.")
         return crs, lla_crs
 
     @property
@@ -964,7 +991,7 @@ class CsvReader(FrameReader):
             )
         except ParamError as ex:
             # repackage error with filename
-            raise ParamError(f"Could not parse '{common.get_filename(file)}': {str(ex)}") from ex
+            raise ParamError(f"Could not parse '{common.get_filename(file)}': {ex!s}") from ex
 
         self._crs = self._crs or self._get_crs()
 
@@ -974,7 +1001,7 @@ class CsvReader(FrameReader):
         :class:`CsvFormat`.
         """
         if 'filename' not in fieldnames:
-            raise ParamError(f"Fields should include 'filename'.")
+            raise ParamError("Fields should include 'filename'.")
 
         has_xyz = {'x', 'y', 'z'}.issubset(fieldnames)
         has_lla = {'latitude', 'longitude', 'altitude'}.issubset(fieldnames)
@@ -983,11 +1010,11 @@ class CsvReader(FrameReader):
 
         if not (has_xyz or has_lla):
             raise ParamError(
-                f"Fields should include 'x', 'y' & 'z', or 'latitude', 'longitude' & 'altitude'."
+                "Fields should include 'x', 'y' & 'z', or 'latitude', 'longitude' & 'altitude'."
             )
         if not (has_opk or has_rpy):
             raise ParamError(
-                f"Fields should include 'omega', 'phi' & 'kappa', or 'roll', 'pitch' & 'yaw'."
+                "Fields should include 'omega', 'phi' & 'kappa', or 'roll', 'pitch' & 'yaw'."
             )
 
         # dictionary with key = (has_xyz, has_opk) and value = CsvFormat
@@ -1067,13 +1094,13 @@ class CsvReader(FrameReader):
 
                     logger.debug(f"Using '{prj_name}' CRS: '{crs.to_string()}'")
                 except FileNotFoundError as ex:
-                    logger.debug(f"Could not open '{prj_name}': {str(ex)}")
+                    logger.debug(f"Could not open '{prj_name}': {ex!s}")
                 except RioCrsError as ex:
-                    raise ParamError(f"Could not interpret CRS in '{prj_name}': {str(ex)}")
+                    raise ParamError(f"Could not interpret CRS in '{prj_name}': {ex!s}")
             else:
                 # a file object was passed to __init__ so the CSV file path / URI is unknown and a
                 # .prj file cannot be found
-                logger.debug(f"Cannot read a .prj file with a CSV file object.")
+                logger.debug("Cannot read a .prj file with a CSV file object.")
 
             if not crs and self._format is CsvFormat.xyz_rpy:
                 raise CrsMissingError(f"'crs' should be specified for positions in '{filename}'.")
@@ -1167,7 +1194,7 @@ class OsfmReader(FrameReader):
             self._int_param_dict = _read_osfm_int_param(self._json_dict['cameras'])
         except ParamError as ex:
             # repackage error with filename
-            raise ParamError(f"Could not parse '{common.get_filename(file)}': {str(ex)}") from ex
+            raise ParamError(f"Could not parse '{common.get_filename(file)}': {ex!s}") from ex
 
         if not self._crs:
             self._crs = self._find_utm_crs()
@@ -1181,7 +1208,7 @@ class OsfmReader(FrameReader):
             try:
                 json_data = json.load(f)
             except Exception as ex:
-                raise ParamError(f"Could not load '{filename}': {str(ex)}") from ex
+                raise ParamError(f"Could not load '{filename}': {ex!s}") from ex
 
         schema = [
             dict(
@@ -1193,7 +1220,7 @@ class OsfmReader(FrameReader):
         try:
             common.validate_collection(schema, json_data)
         except (ValueError, TypeError, KeyError) as ex:
-            raise ParamError(f"Could not parse '{filename}': {str(ex)}") from ex
+            raise ParamError(f"Could not parse '{filename}': {ex!s}") from ex
 
         # keep root schema keys and delete the rest
         json_dict = {k: json_data[0][k] for k in schema[0].keys()}
@@ -1225,14 +1252,10 @@ class OsfmReader(FrameReader):
 
         ext_param_dict = {}
         for filename, shot_dict in self._json_dict['shots'].items():
-            # convert  reconstruction 'translation' and 'rotation' to oty exterior params,
-            # adapted from ODM: https://github.com/OpenDroneMap/ODM/blob/master/opendm/shots.py
-            R = cv2.Rodrigues(np.array(shot_dict['rotation']))[0].T
-            delta_xyz = -R.dot(shot_dict['translation'])
-            xyz = tuple((ref_xyz + delta_xyz).tolist())
-            # rotate camera coords from OpenSfM / OpenCV to PATB convention
-            R_ = R.dot(np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]))
-            opk = _rotation_to_opk(R_)
+            # convert reconstruction 'translation' and 'rotation' to oty exterior params
+            xyz, opk = _cv_ext_to_oty_ext(
+                shot_dict['translation'], shot_dict['rotation'], ref_xyz=ref_xyz
+            )
             cam_id = shot_dict['camera']
             cam_id = cam_id[3:] if cam_id.startswith('v2 ') else cam_id
             ext_param_dict[filename] = dict(xyz=xyz, opk=opk, camera=cam_id)
@@ -1361,7 +1384,7 @@ class OtyReader(FrameReader):
             try:
                 json_dict = json.load(f)
             except Exception as ex:
-                raise ParamError(f"Could not load '{filename}': {str(ex)}") from ex
+                raise ParamError(f"Could not load '{filename}': {ex!s}") from ex
 
         schema = dict(
             type='FeatureCollection',
@@ -1380,13 +1403,13 @@ class OtyReader(FrameReader):
         try:
             common.validate_collection(schema, json_dict)
         except (ValueError, TypeError, KeyError) as ex:
-            raise ParamError(f"Could not parse '{filename}': {str(ex)}") from ex
+            raise ParamError(f"Could not parse '{filename}': {ex!s}") from ex
 
         if not crs:
             try:
                 crs = CRS.from_string(json_dict['world_crs'])
             except RioCrsError as ex:
-                raise ParamError(f"Could not interpret CRS in '{filename}': {str(ex)}")
+                raise ParamError(f"Could not interpret CRS in '{filename}': {ex!s}")
 
         return crs, json_dict
 
